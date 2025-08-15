@@ -1,0 +1,8 @@
+node_modules/
+.http-server.log
+.lt-url.txt
+.DS_Store
+*.log
+*.tgz
+cloudflared
+cloudflared.tgz

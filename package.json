@@ -1,0 +1,12 @@
+{
+  "name": "timewise-static",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tunnel": "node lt.mjs"
+  },
+  "dependencies": {
+    "localtunnel": "^2.0.2"
+  }
+}

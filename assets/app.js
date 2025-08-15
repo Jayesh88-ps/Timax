@@ -1,8 +1,8 @@
-import { migrateOrInit, saveState, loadState } from './utils/storage.js';
-import { formatDayLabel, clampDateToDay } from './utils/time.js';
+import { migrateOrInit, saveState } from './utils/storage.js';
+import { formatDayLabel, clampDateToDay, addMinutes } from './utils/time.js';
 import { showToast } from './ui/toast.js';
-import { TimelineView } from './ui/timeline.js';
 import { TableView } from './ui/table.js';
+import { SequencerView } from './ui/sequencer.js';
 import { NotificationScheduler } from './scheduler.js';
 import { interpretPrompt } from './promptEngine.js';
 import { AutomationEngine } from './automation.js';
@@ -27,45 +27,19 @@ const exportBtn = document.getElementById('export-btn');
 const importInput = document.getElementById('import-input');
 const addQuickBtn = document.getElementById('add-quick-btn');
 
-// Views
+// Views container
 const schedulePanel = document.querySelector('.schedule-panel');
-const timelineContainer = document.createElement('div');
+const sequencerContainer = document.createElement('div');
 const tableContainer = document.createElement('div');
-const viewsSwitcher = document.createElement('div');
-viewsSwitcher.style.display = 'flex';
-viewsSwitcher.style.gap = '6px';
-const btnTimeline = document.createElement('button');
-btnTimeline.className = 'btn btn-secondary';
-btnTimeline.textContent = 'Timeline';
-const btnTable = document.createElement('button');
-btnTable.className = 'btn btn-secondary';
-btnTable.textContent = 'Table';
-viewsSwitcher.appendChild(btnTimeline);
-viewsSwitcher.appendChild(btnTable);
-schedulePanel.querySelector('.panel-header').appendChild(viewsSwitcher);
-schedulePanel.appendChild(timelineContainer);
+schedulePanel.appendChild(sequencerContainer);
 schedulePanel.appendChild(tableContainer);
-
+sequencerContainer.style.marginTop = '12px';
 tableContainer.style.marginTop = '12px';
-timelineContainer.style.marginTop = '12px';
 
-const timeline = new TimelineView(timelineContainer, { onChange: handleViewChange });
+const sequencer = new SequencerView(sequencerContainer, { onChange: handleSequencerChange });
 const table = new TableView(tableContainer, { onChange: handleViewChange });
 
-let currentView = 'timeline';
-function setView(name) {
-  currentView = name;
-  if (name === 'timeline') {
-    timelineContainer.style.display = '';
-    tableContainer.style.display = 'none';
-  } else {
-    timelineContainer.style.display = 'none';
-    tableContainer.style.display = '';
-  }
-}
-setView('timeline');
-btnTimeline.addEventListener('click', () => setView('timeline'));
-btnTable.addEventListener('click', () => setView('table'));
+let sequencerStartAt = null; // minutes since midnight
 
 // Settings init
 function applySettingsUI() {
@@ -153,33 +127,68 @@ importInput.addEventListener('change', (e) => {
   reader.readAsText(file);
 });
 
-function handleViewChange(action) {
-  if (action.type === 'markDone') {
+function handleSequencerChange(action) {
+  if (action.type === 'resequence') {
+    const idToEvent = new Map(state.events.map(e => [e.id, e]));
+    state.events = action.order.map(id => idToEvent.get(id)).filter(Boolean);
+    computeSequencedTimes();
+    persistAndRender('Reordered');
+  } else if (action.type === 'adjustDuration') {
+    const e = state.events.find(x => x.id === action.id);
+    if (e) {
+      const start = new Date(e.start);
+      const end = new Date(e.end);
+      const newEnd = addMinutes(end, action.deltaMinutes);
+      if (newEnd > start) {
+        e.end = newEnd.toISOString();
+        computeSequencedTimes();
+        persistAndRender('Duration updated');
+      }
+    }
+  } else if (action.type === 'togglePin') {
+    const e = state.events.find(x => x.id === action.id);
+    if (e) { e.pinned = action.pinned; computeSequencedTimes(); persistAndRender('Pin updated'); }
+  } else if (action.type === 'setPinnedTime') {
+    const e = state.events.find(x => x.id === action.id);
+    if (e) {
+      const [hh, mm] = action.time.split(':');
+      const day = clampDateToDay(new Date(e.start));
+      const start = new Date(day);
+      start.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+      const duration = (new Date(e.end) - new Date(e.start)) / 60000;
+      e.start = start.toISOString();
+      e.end = addMinutes(start, duration).toISOString();
+      e.pinned = true;
+      computeSequencedTimes();
+      persistAndRender('Pinned time set');
+    }
+  } else if (action.type === 'setStartAt') {
+    sequencerStartAt = action.minutes;
+    computeSequencedTimes();
+    persistAndRender('Start time updated');
+  } else if (action.type === 'markDone') {
     const e = state.events.find(x => x.id === action.id);
     if (e) e.status = 'done';
     persistAndRender('Marked as done');
   } else if (action.type === 'deleteEvent') {
     state.events = state.events.filter(x => x.id !== action.id);
     persistAndRender('Deleted');
-  } else if (action.type === 'editEvent') {
+  } else if (action.type === 'rename') {
     const e = state.events.find(x => x.id === action.id);
-    if (!e) return;
-    const title = prompt('Rename event', e.title) || e.title;
-    e.title = title;
-    persistAndRender('Updated');
+    if (e) { e.title = action.title; persistAndRender('Renamed'); }
+  }
+}
+
+function handleViewChange(action) {
+  if (action.type === 'deleteEvent') {
+    state.events = state.events.filter(x => x.id !== action.id);
+    persistAndRender('Deleted');
   } else if (action.type === 'rename') {
     const e = state.events.find(x => x.id === action.id);
     if (e) { e.title = action.title; persistAndRender('Renamed'); }
   } else if (action.type === 'setStatus') {
     const e = state.events.find(x => x.id === action.id);
     if (e) { e.status = action.status; persistAndRender('Status updated'); }
-  } else if (action.type === 'updateTime') {
-    const e = state.events.find(x => x.id === action.id);
-    if (e) {
-      e.start = action.start.toISOString();
-      e.end = action.end.toISOString();
-      persistAndRender('Rescheduled');
-    }
   }
 }
 
@@ -206,7 +215,65 @@ function applyOperations(ops) {
       });
     }
   }
+  computeSequencedTimes();
   persistAndRender('Applied prompt');
+}
+
+function computeSequencedTimes() {
+  const today = clampDateToDay(new Date());
+  const todays = state.events.filter(e => new Date(e.start).toDateString() === today.toDateString());
+
+  // Separate pinned and flexible tasks
+  const pinned = todays.filter(e => e.pinned);
+  const flex = todays.filter(e => !e.pinned);
+
+  // Sort pinned by start
+  pinned.sort((a,b) => new Date(a.start) - new Date(b.start));
+
+  // Start baseline: sequencerStartAt or first flexible start or now
+  let baseline = sequencerStartAt != null ? sequencerStartAt : (new Date().getHours() * 60 + new Date().getMinutes());
+  const buffer = state.settings.bufferMinutes || 0;
+
+  const result = [];
+  // Place flex tasks before the first pinned if baseline earlier
+  const allPinnedMinutes = pinned.map(e => (new Date(e.start).getHours() * 60 + new Date(e.start).getMinutes()));
+  let nextMinute = baseline;
+
+  const placeFlexUntil = (limitMinute) => {
+    while (flex.length) {
+      const task = flex.shift();
+      const duration = Math.max(1, Math.round((new Date(task.end) - new Date(task.start)) / 60000));
+      const endMinute = nextMinute + duration;
+      if (limitMinute != null && endMinute > limitMinute) {
+        // Cannot fit; push back and break
+        flex.unshift(task);
+        break;
+      }
+      const startDate = new Date(today);
+      startDate.setHours(0,0,0,0);
+      startDate.setMinutes(nextMinute);
+      const endDate = addMinutes(startDate, duration);
+      task.start = startDate.toISOString();
+      task.end = endDate.toISOString();
+      result.push(task);
+      nextMinute = endMinute + buffer;
+    }
+  };
+
+  // Iterate across the day, placing flex blocks around pinned
+  for (const pin of pinned) {
+    const pinStartMin = new Date(pin.start).getHours() * 60 + new Date(pin.start).getMinutes();
+    placeFlexUntil(pinStartMin);
+    result.push(pin);
+    nextMinute = Math.max(nextMinute, pinStartMin + Math.round((new Date(pin.end) - new Date(pin.start)) / 60000) + buffer);
+  }
+
+  // Place remaining flex after last pinned
+  placeFlexUntil(null);
+
+  // Merge back into state.events preserving non-today entries
+  const nonToday = state.events.filter(e => new Date(e.start).toDateString() !== today.toDateString());
+  state.events = nonToday.concat(result);
 }
 
 function render() {
@@ -236,18 +303,13 @@ function render() {
     const doneBtn = document.createElement('button');
     doneBtn.className = 'btn btn-secondary';
     doneBtn.textContent = 'Done';
-    doneBtn.addEventListener('click', () => handleViewChange({ type: 'markDone', id: e.id }));
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-secondary';
-    editBtn.textContent = 'Edit';
-    editBtn.addEventListener('click', () => handleViewChange({ type: 'editEvent', id: e.id }));
+    doneBtn.addEventListener('click', () => handleSequencerChange({ type: 'markDone', id: e.id }));
     const delBtn = document.createElement('button');
     delBtn.className = 'btn btn-secondary';
     delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', () => handleViewChange({ type: 'deleteEvent', id: e.id }));
+    delBtn.addEventListener('click', () => handleSequencerChange({ type: 'deleteEvent', id: e.id }));
 
     actions.appendChild(doneBtn);
-    actions.appendChild(editBtn);
     actions.appendChild(delBtn);
 
     li.appendChild(t);
@@ -257,8 +319,9 @@ function render() {
     todayList.appendChild(li);
   }
 
-  timeline.setDay(today);
-  timeline.setEvents(adjusted);
+  sequencer.setDay(today);
+  sequencer.setStartAtMinutes(sequencerStartAt);
+  sequencer.setEvents(adjusted);
   table.setEvents(state.events);
 
   scheduler.schedule(state.events);
@@ -270,4 +333,5 @@ function persistAndRender(toastMsg) {
   render();
 }
 
+computeSequencedTimes();
 render();

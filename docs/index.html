@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Timewise — Personal Schedule</title>
+    <meta name="description" content="Personal time management with prompt-based scheduling and notifications.">
+    <link rel="stylesheet" href="./assets/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="logo">⏱️</span>
+        <h1>Timewise</h1>
+      </div>
+      <nav class="header-actions">
+        <button id="notify-permission-btn" class="btn">Enable notifications</button>
+        <button id="export-btn" class="btn">Export</button>
+        <label class="file-input">
+          <input id="import-input" type="file" accept="application/json" />
+          <span class="btn">Import</span>
+        </label>
+        <button id="settings-toggle" class="btn btn-secondary">Settings</button>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="panel prompt-panel">
+        <h2>Quick prompt</h2>
+        <form id="prompt-form" autocomplete="off">
+          <input id="prompt-input" type="text" placeholder="e.g., Add math revision tomorrow at 7pm for 45m" />
+          <button class="btn" type="submit">Apply</button>
+        </form>
+        <div class="prompt-hints">
+          <button class="chip" data-suggest="Add chemistry from 4pm to 5pm today">Add chemistry 4–5pm today</button>
+          <button class="chip" data-suggest="Move chemistry to 6:30pm today">Move chemistry to 6:30pm</button>
+          <button class="chip" data-suggest="Shift today by 30m">I'm late by 30m</button>
+          <button class="chip" data-suggest="Add daily reading at 9pm for 30m on weekdays">Weekday reading 9pm</button>
+        </div>
+      </section>
+
+      <section class="panel schedule-panel">
+        <div class="panel-header">
+          <h2 id="today-title">Today</h2>
+          <button id="add-quick-btn" class="btn btn-secondary">+ Quick add</button>
+        </div>
+        <ul id="today-list" class="event-list"></ul>
+      </section>
+
+      <aside id="settings" class="panel settings-panel" hidden>
+        <h2>Settings</h2>
+        <div class="settings-grid">
+          <label>
+            Lead time (minutes)
+            <input id="setting-lead" type="number" min="0" step="5" />
+          </label>
+          <label>
+            Day starts at (hour)
+            <input id="setting-day-start" type="number" min="0" max="23" />
+          </label>
+          <label>
+            Day ends at (hour)
+            <input id="setting-day-end" type="number" min="0" max="23" />
+          </label>
+          <label>
+            Buffer between events (minutes)
+            <input id="setting-buffer" type="number" min="0" step="5" />
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button id="save-settings" class="btn">Save</button>
+          <button id="close-settings" class="btn btn-secondary">Close</button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module" src="./assets/app.js"></script>
+  </body>
+</html>
